@@ -4,20 +4,18 @@ set -o errexit
 set -o errtrace
 set -o pipefail
 
-if [ -n "${REGION}" ]; then
-  TARGET_REGION=${REGION}
-else
-  TARGET_REGION=eu-west-1
+if [ -z "${AWS_REGION}" ]; then
+  AWS_REGION=eu-west-1
 fi
 
-if [ -n "${CLUSTER}" ]; then
-  CLUSTER_NAME=${CLUSTER}
+if [ -n "${INPUT_NAME}" ]; then
+  CLUSTER_NAME=${INPUT_NAME}
 else
   NOW=$(date '+%s')
   CLUSTER_NAME=$GITHUB_ACTOR-$NOW
 fi
 
-echo "Provisioning EKS on Fargate cluster $CLUSTER_NAME in $TARGET_REGION"
+echo "Provisioning EKS on Fargate cluster $CLUSTER_NAME in $AWS_REGION"
 
 # create EKS on Fargate cluster:
 tmpdir=$(mktemp -d)
@@ -26,8 +24,7 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 metadata:
   name: $CLUSTER_NAME
-  region: $TARGET_REGION
-  version: '1.16'
+  version: "$INPUT_VERSION"
 iam:
   withOIDC: true
 fargateProfiles:
@@ -39,15 +36,16 @@ cloudWatch:
   clusterLogging:
     enableTypes: ["*"]
 EOF
+
 eksctl create cluster -f ${tmpdir}/fg-cluster-spec.yaml
 
 # check if cluster if available
-echo "Waiting for cluster $CLUSTER_NAME in $TARGET_REGION to become available"
+echo "Waiting for cluster $CLUSTER_NAME in $AWS_REGION to become available"
 sleep 10
 cluster_status="UNKNOWN"
 until [ "$cluster_status" == "ACTIVE" ]
 do 
-    cluster_status=$(eksctl get cluster $CLUSTER_NAME --region $TARGET_REGION -o json | jq -r '.[0].Status')
+    cluster_status=$(eksctl get cluster $CLUSTER_NAME --region $AWS_REGION -o json | jq -r '.[0].Status')
     sleep 3
 done
 
@@ -59,3 +57,15 @@ kubectl config set-context $(kubectl config current-context) --namespace=serverl
 # patch kube-system namespace to run also on Fargate:
 kubectl --namespace kube-system patch deployment coredns \
         --type json -p='[{"op": "remove", "path": "/spec/template/metadata/annotations/eks.amazonaws.com~1compute-type"}]'
+
+
+if [ -n "${INPUT_ADD-SYSTEM-MASTERS-ARN}" ]; then
+  echo "Configuring role for system:masters"
+
+  eksctl create iamidentitymapping --cluster $CLUSTER_NAME \
+  --region=$AWS_REGION \
+  --arn ${INPUT_ADD-SYSTEM-MASTERS-ARN} \
+  --group system:masters \
+  --no-duplicate-arns
+fi
+

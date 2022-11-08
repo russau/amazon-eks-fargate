@@ -40,7 +40,7 @@ else
   cloudWatch:
     clusterLogging:
       enableTypes: ["*"]
-  EOF
+EOF
 
   eksctl create cluster -f ${tmpdir}/fg-cluster-spec.yaml
 

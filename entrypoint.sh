@@ -18,6 +18,7 @@ fi
 # test if a cluster already exists
 if eksctl get cluster $CLUSTER_NAME --region $AWS_REGION &>/dev/null; then
   echo "Existing Fargate cluster $CLUSTER_NAME in $AWS_REGION"
+  eksctl utils write-kubeconfig --cluster $CLUSTER_NAME --region $AWS_REGION
 else
   echo "Provisioning EKS on Fargate cluster $CLUSTER_NAME in $AWS_REGION"
 
@@ -60,13 +61,16 @@ echo "EKS on Fargate cluster $CLUSTER_NAME is ready, configuring it:"
 kubectl create namespace serverless || true
 kubectl config set-context $(kubectl config current-context) --namespace=serverless
 
-if [ -n "${INPUT_ADD-SYSTEM-MASTERS-ARN}" ]; then
+# hypens in bash variables -> https://unix.stackexchange.com/a/224572/12069
+if [ -n "${INPUT_ADD_SYSTEM_MASTERS_ARN}" ]; then
   echo "Configuring role for system:masters"
 
   eksctl create iamidentitymapping --cluster $CLUSTER_NAME \
   --region=$AWS_REGION \
-  --arn ${INPUT_ADD-SYSTEM-MASTERS-ARN} \
+  --arn ${INPUT_ADD_SYSTEM_MASTERS_ARN} \
   --group system:masters \
   --no-duplicate-arns
 fi
 
+# remember the cluster name in github state
+echo -n "CLUSTER_NAME=$CLUSTER_NAME" > $GITHUB_STATE

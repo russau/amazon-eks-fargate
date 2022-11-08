@@ -15,7 +15,7 @@ RUN yum -y install unzip && \
     curl https://stedolan.github.io/jq/download/linux64/jq > $JQ && chmod +x $JQ
 
 # copy from repo into container image:
-COPY entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh post-entrypoint.sh /
 
 # make default on start-up:
 ENTRYPOINT ["/entrypoint.sh"]

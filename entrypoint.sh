@@ -15,49 +15,50 @@ else
   CLUSTER_NAME=$GITHUB_ACTOR-$NOW
 fi
 
-echo "Provisioning EKS on Fargate cluster $CLUSTER_NAME in $AWS_REGION"
+# test if a cluster already exists
+if eksctl get cluster $CLUSTER_NAME --region $AWS_REGION &>/dev/null; then
+  echo "Existing Fargate cluster $CLUSTER_NAME in $AWS_REGION"
+else
+  echo "Provisioning EKS on Fargate cluster $CLUSTER_NAME in $AWS_REGION"
 
-# create EKS on Fargate cluster:
-tmpdir=$(mktemp -d)
-cat <<EOF >> ${tmpdir}/fg-cluster-spec.yaml
-apiVersion: eksctl.io/v1alpha5
-kind: ClusterConfig
-metadata:
-  name: $CLUSTER_NAME
-  version: "$INPUT_VERSION"
-iam:
-  withOIDC: true
-fargateProfiles:
-  - name: defaultfp
-    selectors:
-      - namespace: serverless
-      - namespace: kube-system
-cloudWatch:
-  clusterLogging:
-    enableTypes: ["*"]
-EOF
+  # create EKS on Fargate cluster:
+  tmpdir=$(mktemp -d)
+  cat <<EOF >> ${tmpdir}/fg-cluster-spec.yaml
+  apiVersion: eksctl.io/v1alpha5
+  kind: ClusterConfig
+  metadata:
+    name: $CLUSTER_NAME
+    version: "$INPUT_VERSION"
+    region: $AWS_REGION
+  iam:
+    withOIDC: true
+  fargateProfiles:
+    - name: defaultfp
+      selectors:
+        - namespace: serverless
+        - namespace: kube-system
+  cloudWatch:
+    clusterLogging:
+      enableTypes: ["*"]
+  EOF
 
-eksctl create cluster -f ${tmpdir}/fg-cluster-spec.yaml
+  eksctl create cluster -f ${tmpdir}/fg-cluster-spec.yaml
 
-# check if cluster if available
-echo "Waiting for cluster $CLUSTER_NAME in $AWS_REGION to become available"
-sleep 10
-cluster_status="UNKNOWN"
-until [ "$cluster_status" == "ACTIVE" ]
-do 
-    cluster_status=$(eksctl get cluster $CLUSTER_NAME --region $AWS_REGION -o json | jq -r '.[0].Status')
-    sleep 3
-done
+  # check if cluster if available
+  echo "Waiting for cluster $CLUSTER_NAME in $AWS_REGION to become available"
+  sleep 10
+  cluster_status="UNKNOWN"
+  until [ "$cluster_status" == "ACTIVE" ]
+  do 
+      cluster_status=$(eksctl get cluster $CLUSTER_NAME --region $AWS_REGION -o json | jq -r '.[0].Status')
+      sleep 3
+  done
+fi
 
 # create serverless namespace for Fargate pods, make it the active namespace:
 echo "EKS on Fargate cluster $CLUSTER_NAME is ready, configuring it:"
-kubectl create namespace serverless
+kubectl create namespace serverless || true
 kubectl config set-context $(kubectl config current-context) --namespace=serverless
-
-# patch kube-system namespace to run also on Fargate:
-kubectl --namespace kube-system patch deployment coredns \
-        --type json -p='[{"op": "remove", "path": "/spec/template/metadata/annotations/eks.amazonaws.com~1compute-type"}]'
-
 
 if [ -n "${INPUT_ADD-SYSTEM-MASTERS-ARN}" ]; then
   echo "Configuring role for system:masters"

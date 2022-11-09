@@ -73,4 +73,4 @@ if [ -n "${INPUT_ADD_SYSTEM_MASTERS_ARN}" ]; then
 fi
 
 # remember the cluster name in github state
-echo -n "CLUSTER_NAME=$CLUSTER_NAME" > $GITHUB_STATE
+echo -n "CLUSTER_NAME=$CLUSTER_NAME" > $GITHUB_ENV
